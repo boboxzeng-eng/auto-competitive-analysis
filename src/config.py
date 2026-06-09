@@ -14,7 +14,7 @@ DATA_DIR = ROOT_DIR / "data"
 # 数据库配置
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    f"sqlite:///{DATA_DIR}/competitive_analysis.db"
+    f"sqlite:///{DATA_DIR}/competitive_analysis_v2.db"
 )
 
 # ==================== 爬虫合规配置 ====================
