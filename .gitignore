@@ -16,6 +16,7 @@ venv/
 # Data
 data/*.db
 data/*.csv
+data/reports/
 
 # Env
 .env
