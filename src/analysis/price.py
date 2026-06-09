@@ -31,6 +31,9 @@ def analyze_price_distribution(products: list[dict]) -> dict:
         return {"error": "无商品数据"}
 
     df = pd.DataFrame(products)
+    if "price" not in df.columns:
+        return {"error": "无价格数据"}
+
     prices = df["price"].dropna()
 
     if prices.empty:

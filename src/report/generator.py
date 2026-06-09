@@ -50,6 +50,11 @@ def generate_category_report(
             "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "data_count": len(products) if products else 0,
             "data_source": "京东 (JD.com)",
+            "compliance_note": (
+                "本报告数据来源于电商平台公开搜索列表页，"
+                "仅供个人竞品分析使用。采集过程遵守 robots.txt，"
+                "明确标识爬虫身份，所有数据可溯源。"
+            ),
         },
         "price_analysis": analyze_price_distribution(products or []),
         "market_analysis": analyze_market_overview(products or []),

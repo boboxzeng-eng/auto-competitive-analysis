@@ -36,19 +36,24 @@ def analyze_market_overview(products: list[dict]) -> dict:
     result = {}
 
     # 品牌分布
-    brands = df["brand"].dropna().replace("", pd.NA).dropna()
-    if not brands.empty:
-        brand_counts = Counter(brands.tolist())
-        result["brand_distribution"] = brand_counts.most_common(10)
+    if "brand" in df.columns:
+        brands = df["brand"].dropna().replace("", pd.NA).dropna()
+        if not brands.empty:
+            brand_counts = Counter(brands.tolist())
+            result["brand_distribution"] = brand_counts.most_common(10)
 
     # 店铺分布
-    shops = df["shop_name"].dropna().replace("", pd.NA).dropna()
-    if not shops.empty:
-        shop_counts = Counter(shops.tolist())
-        result["shop_distribution"] = shop_counts.most_common(10)
+    if "shop_name" in df.columns:
+        shops = df["shop_name"].dropna().replace("", pd.NA).dropna()
+        if not shops.empty:
+            shop_counts = Counter(shops.tolist())
+            result["shop_distribution"] = shop_counts.most_common(10)
 
     # 销量排名
-    sales_df = df[df["sales_volume"].notna()].copy()
+    if "sales_volume" in df.columns:
+        sales_df = df[df["sales_volume"].notna()].copy()
+    else:
+        sales_df = pd.DataFrame()
     if not sales_df.empty:
         top_sales = sales_df.nlargest(10, "sales_volume")
         result["top_by_sales"] = [
@@ -63,7 +68,10 @@ def analyze_market_overview(products: list[dict]) -> dict:
         ]
 
     # 价格-销量相关性
-    price_sales = df[df["price"].notna() & df["sales_volume"].notna()]
+    if "price" in df.columns and "sales_volume" in df.columns:
+        price_sales = df[df["price"].notna() & df["sales_volume"].notna()]
+    else:
+        price_sales = pd.DataFrame()
     if len(price_sales) > 2:
         corr = price_sales["price"].corr(price_sales["sales_volume"])
         result["price_vs_sales_correlation"] = round(float(corr), 3)

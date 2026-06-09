@@ -1,5 +1,5 @@
 """
-分析看板页面 — 可视化展示竞品分析结果
+分析看板页面 — 竞品分析结果可视化
 """
 
 import sys
@@ -11,17 +11,15 @@ sys.path.insert(0, str(ROOT))
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 
 from src.storage.database import get_session, init_db
 from src.storage.repository import (
     get_all_categories, get_products_by_category,
-    get_latest_completed_task,
+    get_competitors_by_task,
 )
 from src.report.generator import (
     generate_category_report,
     render_html_report,
-    export_report_to_file,
 )
 
 
@@ -33,21 +31,14 @@ def render():
     try:
         categories = get_all_categories(session)
         if not categories:
-            st.info("还没有分析数据，请先在「🏠 品类选择」页启动一次分析。")
+            st.info("还没有分析数据，请先在「🎯 竞品工作台」页启动分析。")
             return
 
-        # 品类选择器
         cat_names = [c.name for c in categories]
-        selected_name = st.selectbox(
-            "选择品类查看报告",
-            cat_names,
-            key="dashboard_category",
-        )
-
+        selected_name = st.selectbox("选择品类查看报告", cat_names)
         if not selected_name:
             return
 
-        # 获取数据
         category = next(c for c in categories if c.name == selected_name)
         products = get_products_by_category(session, category.id, limit=200)
 
@@ -57,7 +48,13 @@ def render():
 
         product_dicts = [p.to_dict() for p in products]
 
-        # 生成报告
+        # 竞品筛选
+        competitors_only = st.toggle("仅显示竞品", value=True)
+        if competitors_only:
+            display_products = [p for p in product_dicts if p.get("is_competitor")]
+        else:
+            display_products = product_dicts
+
         report = generate_category_report(
             category_name=selected_name,
             category_id=category.id,
@@ -67,63 +64,51 @@ def render():
         # ---- 顶部操作栏 ----
         col_title, col_export = st.columns([3, 1])
         with col_title:
+            comp_count = sum(1 for p in product_dicts if p.get("is_competitor"))
             st.subheader(f"📊 {report['meta']['title']}")
             st.caption(
-                f"生成时间: {report['meta']['generated_at']} | "
-                f"数据量: {report['meta']['data_count']} 件商品"
+                f"商品总数: {len(product_dicts)} | "
+                f"🎯 竞品: {comp_count} 件 | "
+                f"生成时间: {report['meta']['generated_at']}"
             )
         with col_export:
-            _render_export_button(report, product_dicts, selected_name, category.id)
+            if st.button("📥 导出 HTML 报告", type="primary", use_container_width=True):
+                with st.spinner("正在生成 HTML 报告..."):
+                    html = render_html_report(report, product_dicts)
+                    st.download_button(
+                        label="⬇️ 下载 HTML 报告",
+                        data=html,
+                        file_name=f"report_{selected_name}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.html",
+                        mime="text/html",
+                    )
 
         # ---- KPI 卡片 ----
-        _render_kpi_cards(report)
+        _render_kpi_cards(report, comp_count)
 
         st.markdown("---")
 
         # ---- 图表区 ----
         col1, col2 = st.columns(2)
-
         with col1:
             _render_price_chart(report)
-
         with col2:
-            _render_brand_chart(report)
+            _render_competitor_score_chart(display_products)
 
         st.markdown("---")
 
         # ---- 商品列表 ----
-        _render_product_table(product_dicts)
+        _render_product_table(display_products)
 
     finally:
         session.close()
 
 
-def _render_export_button(report: dict, products: list[dict], category_name: str, category_id: int):
-    """渲染 HTML 导出按钮"""
-    st.markdown("")  # 对齐间距
-
-    if st.button("📥 导出 HTML 报告", type="primary", use_container_width=True):
-        with st.spinner("正在生成 HTML 报告..."):
-            try:
-                html = render_html_report(report, products)
-                st.download_button(
-                    label="⬇️ 下载 HTML 报告",
-                    data=html,
-                    file_name=f"report_{category_name}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.html",
-                    mime="text/html",
-                )
-                st.success("✅ 报告已生成，点击上方按钮下载")
-            except Exception as e:
-                st.error(f"生成失败: {e}")
-
-
-def _render_kpi_cards(report: dict):
-    """KPI 概览卡片"""
+def _render_kpi_cards(report: dict, comp_count: int):
     price = report.get("price_analysis", {})
-
-    cols = st.columns(5)
+    cols = st.columns(6)
     metrics = [
         ("商品总数", f"{report['meta']['data_count']} 件"),
+        ("🎯 竞品数", f"{comp_count} 件"),
         ("最低价", f"¥{price.get('min_price', 'N/A')}"),
         ("平均价", f"¥{price.get('mean_price', 'N/A')}"),
         ("最高价", f"¥{price.get('max_price', 'N/A')}"),
@@ -135,16 +120,13 @@ def _render_kpi_cards(report: dict):
 
 
 def _render_price_chart(report: dict):
-    """价格分布图表"""
     price = report.get("price_analysis", {})
     ranges = price.get("price_ranges", [])
-
     if not ranges:
         st.info("暂无价格数据")
         return
 
     st.subheader("💰 价格区间分布")
-
     df_ranges = pd.DataFrame(ranges)
     fig = px.bar(
         df_ranges, x="range", y="count",
@@ -157,29 +139,37 @@ def _render_price_chart(report: dict):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def _render_brand_chart(report: dict):
-    """品牌分布图表"""
-    market = report.get("market_analysis", {})
-    brands = market.get("brand_distribution", [])
+def _render_competitor_score_chart(products: list[dict]):
+    """竞品得分分布"""
+    st.subheader("🎯 竞品得分分布")
 
-    if not brands:
-        st.info("暂无品牌数据")
+    scored = [p for p in products if p.get("competitor_score") is not None]
+    if not scored:
+        st.info("暂无竞品得分数据")
         return
 
-    st.subheader("🏷️ 品牌分布 Top10")
+    df = pd.DataFrame(scored)
+    df = df.sort_values("competitor_score", ascending=True)
 
-    df_brands = pd.DataFrame(brands, columns=["brand", "count"])
-    fig = px.pie(
-        df_brands, names="brand", values="count",
-        title="品牌市场份额",
-        hole=0.4,
-        height=400,
+    # 给每个商品截短标题
+    df["short_title"] = df["title"].apply(lambda x: x[:25] + "..." if len(x) > 25 else x)
+
+    fig = px.bar(
+        df.tail(15),  # Top 15
+        x="competitor_score",
+        y="short_title",
+        orientation="h",
+        title="竞品得分 Top 15",
+        labels={"competitor_score": "竞品得分", "short_title": ""},
+        color="competitor_score",
+        color_continuous_scale="RdYlGn",
+        range_color=[0, 1],
     )
+    fig.update_layout(height=400)
     st.plotly_chart(fig, use_container_width=True)
 
 
 def _render_product_table(products: list[dict]):
-    """商品明细表格"""
     st.subheader("📋 商品明细")
 
     if not products:
@@ -190,22 +180,27 @@ def _render_product_table(products: list[dict]):
     show_cols = {
         "title": "商品名称",
         "price": "价格 (¥)",
-        "shop_name": "店铺",
+        "competitor_score": "竞品得分",
         "brand": "品牌",
+        "shop_name": "店铺",
         "sales_volume": "销量",
         "platform": "平台",
         "url": "链接",
     }
     cols = [c for c in show_cols if c in df.columns]
-    df_show = df[cols].rename(columns=show_cols)
+    df_show = df[cols].rename(columns=show_cols).copy()
 
     if "价格 (¥)" in df_show.columns:
         df_show["价格 (¥)"] = df_show["价格 (¥)"].apply(
             lambda x: f"¥{x:.2f}" if pd.notna(x) else "-"
         )
+    if "竞品得分" in df_show.columns:
+        df_show["竞品得分"] = df_show["竞品得分"].apply(
+            lambda x: f"{x:.2f}" if pd.notna(x) else "-"
+        )
 
     st.dataframe(
-        df_show,
+        df_show.sort_values("竞品得分", ascending=False) if "竞品得分" in df_show.columns else df_show,
         use_container_width=True,
         hide_index=True,
         column_config={
