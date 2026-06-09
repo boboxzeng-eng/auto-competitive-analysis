@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ report.meta.title }}</title>
+<style>
+  :root {
+    --primary: #1a73e8;
+    --bg: #f8f9fa;
+    --card-bg: #ffffff;
+    --text: #202124;
+    --text-secondary: #5f6368;
+    --border: #e0e0e0;
+    --success: #0d904f;
+    --warning: #f9ab00;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  header { background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%); color: white; padding: 40px 24px; border-radius: 12px; margin-bottom: 24px; }
+  header h1 { font-size: 28px; margin-bottom: 8px; }
+  header p { opacity: 0.85; font-size: 14px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .kpi-card { background: var(--card-bg); border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); text-align: center; }
+  .kpi-card .label { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+  .kpi-card .value { font-size: 26px; font-weight: 700; color: var(--primary); }
+  .section { background: var(--card-bg); border-radius: 10px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .section h2 { font-size: 18px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid var(--primary); }
+  .chart-container { margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { background: #f1f3f4; text-align: left; padding: 10px 12px; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover td { background: #f8f9fa; }
+  .price-low { color: #0d904f; font-weight: 600; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+  .badge-jd { background: #ffe0e0; color: #c62828; }
+  .badge-tb { background: #fff3e0; color: #e65100; }
+  .footer { text-align: center; padding: 24px; color: var(--text-secondary); font-size: 12px; }
+  .footer a { color: var(--primary); }
+  .source-link { color: var(--primary); text-decoration: none; font-size: 13px; }
+  .source-link:hover { text-decoration: underline; }
+  .summary-text { background: #e8f0fe; border-left: 4px solid var(--primary); padding: 16px; border-radius: 4px; margin: 16px 0; font-size: 15px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <h1>{{ report.meta.title }}</h1>
+    <p>报告生成时间: {{ report.meta.generated_at }} | 数据来源: 京东 | 商品总数: {{ report.meta.data_count }} 件</p>
+  </header>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    {% set pa = report.price_analysis %}
+    <div class="kpi-card">
+      <div class="label">商品总数</div>
+      <div class="value">{{ report.meta.data_count }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">最低价</div>
+      <div class="value">¥{{ "%.2f"|format(pa.min_price) if pa.min_price else '--' }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">平均价</div>
+      <div class="value">¥{{ "%.2f"|format(pa.mean_price) if pa.mean_price else '--' }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">最高价</div>
+      <div class="value">¥{{ "%.2f"|format(pa.max_price) if pa.max_price else '--' }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">中位数</div>
+      <div class="value">¥{{ "%.2f"|format(pa.median_price) if pa.median_price else '--' }}</div>
+    </div>
+  </div>
+
+  <!-- Market Summary -->
+  {% set ma = report.market_analysis %}
+  {% if ma.summary %}
+  <div class="summary-text">
+    <strong>📊 市场概况：</strong>{{ ma.summary }}
+  </div>
+  {% endif %}
+
+  <!-- Price Distribution -->
+  <div class="section">
+    <h2>💰 价格区间分布</h2>
+    {% if pa.price_ranges %}
+    <table>
+      <thead><tr><th>价格区间</th><th>商品数量</th><th>占比</th></tr></thead>
+      <tbody>
+        {% for r in pa.price_ranges %}
+        <tr>
+          <td>{{ r.range }}</td>
+          <td>{{ r.count }}</td>
+          <td>{{ "%.1f"|format(r.count / report.meta.data_count * 100) if report.meta.data_count else 0 }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--text-secondary)">暂无价格数据</p>
+    {% endif %}
+  </div>
+
+  <!-- Top Products -->
+  <div class="section">
+    <h2>🏆 最低价商品 Top 5</h2>
+    {% if pa.top_cheapest %}
+    <table>
+      <thead><tr><th>商品名称</th><th>价格</th><th>店铺</th><th>链接</th></tr></thead>
+      <tbody>
+        {% for p in pa.top_cheapest %}
+        <tr>
+          <td>{{ p.title }}</td>
+          <td class="price-low">¥{{ "%.2f"|format(p.price) if p.price else '--' }}</td>
+          <td>{{ p.shop_name or '--' }}</td>
+          <td><a class="source-link" href="{{ p.url }}" target="_blank">查看 &rarr;</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--text-secondary)">暂无数据</p>
+    {% endif %}
+  </div>
+
+  <!-- Brand Distribution -->
+  <div class="section">
+    <h2>🏷️ 品牌分布 Top 10</h2>
+    {% if ma.brand_distribution %}
+    <table>
+      <thead><tr><th>排名</th><th>品牌</th><th>商品数</th></tr></thead>
+      <tbody>
+        {% for brand, count in ma.brand_distribution %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td><strong>{{ brand }}</strong></td>
+          <td>{{ count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--text-secondary)">暂无品牌数据</p>
+    {% endif %}
+  </div>
+
+  <!-- Shop Distribution -->
+  {% if ma.shop_distribution %}
+  <div class="section">
+    <h2>🏪 店铺分布 Top 10</h2>
+    <table>
+      <thead><tr><th>排名</th><th>店铺</th><th>商品数</th></tr></thead>
+      <tbody>
+        {% for shop, count in ma.shop_distribution %}
+        <tr><td>{{ loop.index }}</td><td>{{ shop }}</td><td>{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- All Products Table -->
+  <div class="section">
+    <h2>📋 全部商品明细</h2>
+    {% if products %}
+    <table>
+      <thead>
+        <tr>
+          <th>商品名称</th>
+          <th>价格</th>
+          <th>店铺</th>
+          <th>品牌</th>
+          <th>销量</th>
+          <th>评价数</th>
+          <th>来源</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in products %}
+        <tr>
+          <td>
+            <a class="source-link" href="{{ p.url }}" target="_blank">{{ p.title[:50] }}{% if p.title|length > 50 %}...{% endif %}</a>
+          </td>
+          <td>¥{{ "%.2f"|format(p.price) if p.price else '--' }}</td>
+          <td>{{ p.shop_name or '--' }}</td>
+          <td>{{ p.brand or '--' }}</td>
+          <td>{{ p.sales_volume or '--' }}</td>
+          <td>{{ p.comment_count or '--' }}</td>
+          <td><span class="badge badge-{{ p.platform }}">{{ p.platform.upper() }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--text-secondary)">暂无商品数据</p>
+    {% endif %}
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <p>本报告由 <strong>自动化竞分析系统</strong> 自动生成</p>
+    <p>数据来源: 京东 (JD.com) | 所有数据均保留原始采集快照，确保可溯源</p>
+    <p>生成时间: {{ report.meta.generated_at }}</p>
+  </div>
+
+</div>
+</body>
+</html>

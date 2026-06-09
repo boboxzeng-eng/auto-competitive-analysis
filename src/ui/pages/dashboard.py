@@ -18,7 +18,11 @@ from src.storage.repository import (
     get_all_categories, get_products_by_category,
     get_latest_completed_task,
 )
-from src.report.generator import generate_category_report
+from src.report.generator import (
+    generate_category_report,
+    render_html_report,
+    export_report_to_file,
+)
 
 
 def render():
@@ -60,6 +64,17 @@ def render():
             products=product_dicts,
         )
 
+        # ---- 顶部操作栏 ----
+        col_title, col_export = st.columns([3, 1])
+        with col_title:
+            st.subheader(f"📊 {report['meta']['title']}")
+            st.caption(
+                f"生成时间: {report['meta']['generated_at']} | "
+                f"数据量: {report['meta']['data_count']} 件商品"
+            )
+        with col_export:
+            _render_export_button(report, product_dicts, selected_name, category.id)
+
         # ---- KPI 卡片 ----
         _render_kpi_cards(report)
 
@@ -83,17 +98,32 @@ def render():
         session.close()
 
 
+def _render_export_button(report: dict, products: list[dict], category_name: str, category_id: int):
+    """渲染 HTML 导出按钮"""
+    st.markdown("")  # 对齐间距
+
+    if st.button("📥 导出 HTML 报告", type="primary", use_container_width=True):
+        with st.spinner("正在生成 HTML 报告..."):
+            try:
+                html = render_html_report(report, products)
+                st.download_button(
+                    label="⬇️ 下载 HTML 报告",
+                    data=html,
+                    file_name=f"report_{category_name}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                )
+                st.success("✅ 报告已生成，点击上方按钮下载")
+            except Exception as e:
+                st.error(f"生成失败: {e}")
+
+
 def _render_kpi_cards(report: dict):
     """KPI 概览卡片"""
-    meta = report["meta"]
     price = report.get("price_analysis", {})
-
-    st.subheader(f"📊 {meta['title']}")
-    st.caption(f"生成时间: {meta['generated_at']} | 数据量: {meta['data_count']} 件商品")
 
     cols = st.columns(5)
     metrics = [
-        ("商品总数", f"{meta['data_count']} 件"),
+        ("商品总数", f"{report['meta']['data_count']} 件"),
         ("最低价", f"¥{price.get('min_price', 'N/A')}"),
         ("平均价", f"¥{price.get('mean_price', 'N/A')}"),
         ("最高价", f"¥{price.get('max_price', 'N/A')}"),
@@ -123,7 +153,7 @@ def _render_price_chart(report: dict):
         color="count",
         color_continuous_scale="Blues",
     )
-    fig.update_layout(showlegend=False)
+    fig.update_layout(showlegend=False, height=400)
     st.plotly_chart(fig, use_container_width=True)
 
 
@@ -143,6 +173,7 @@ def _render_brand_chart(report: dict):
         df_brands, names="brand", values="count",
         title="品牌市场份额",
         hole=0.4,
+        height=400,
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -156,7 +187,6 @@ def _render_product_table(products: list[dict]):
         return
 
     df = pd.DataFrame(products)
-    # 选择展示列
     show_cols = {
         "title": "商品名称",
         "price": "价格 (¥)",
@@ -169,7 +199,6 @@ def _render_product_table(products: list[dict]):
     cols = [c for c in show_cols if c in df.columns]
     df_show = df[cols].rename(columns=show_cols)
 
-    # 价格格式化
     if "价格 (¥)" in df_show.columns:
         df_show["价格 (¥)"] = df_show["价格 (¥)"].apply(
             lambda x: f"¥{x:.2f}" if pd.notna(x) else "-"
